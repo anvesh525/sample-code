@@ -4,3 +4,369 @@
 *.jar
 *.war
 *.ear
+
+
+import java.io.*;
+
+public class Sample {
+    char ext[];
+	int size;
+	char sizeInChar[];
+	String message;
+	String verification = "stego";
+	char verify[];
+	String stegoFile;
+	String outputFileName;
+	String pwd;
+	int pwdlen;
+
+    public boolean hasExtention(String f){
+	 for(int i=0; i<f.length(); i++){
+		if(f.charAt(i)=='.')
+			return true;
+	 }
+	 return false;
+    }
+
+    void getExtension(String fileName){
+       ext = new char[4];
+       ext[0] = 0;
+       ext[1] =0;
+       ext[2] =0;
+       ext[3] = 0;
+       if(hasExtention(fileName)){
+         int ext_index = fileName.indexOf(".");
+         String temp = fileName.substring(ext_index+1);
+         int len = temp.length();
+         char q[] = temp.toCharArray();
+         for (int i=0; i<len; i++){
+            if (q[i] == '\0'){
+                ext[i]=0;
+
+            }
+            else{
+                ext[i] = q[i];
+            }
+          
+         }
+     }
+	 else{
+	     ext[0] = 'y';
+	     ext[1] = 'y';
+	     ext[2] = 'y';
+	     ext[3] = 'y';
+	 }
+    }
+
+   void readSizeInChar(){
+     // converting size into character to be embedded
+     int tempSize;
+     
+     sizeInChar = new char[4];
+     tempSize = size;
+
+     int tempsize1 = tempSize & 0x000000ff;
+     sizeInChar[3] = (char) (tempSize & 0x000000ff);
+
+     tempSize = tempSize>>8;
+     sizeInChar[2] =  (char)(tempSize & 0x000000ff) ;
+
+     tempSize = tempSize>>8;
+     sizeInChar[1] = (char)(tempSize & 0x000000ff);
+
+     tempSize = tempSize>>8;
+     sizeInChar[0] =  (char)(tempSize & 0x000000ff);
+}
+
+   int getFileSize(String fileName) throws IOException{
+
+     FileInputStream fip = new FileInputStream(fileName);
+     char c;
+	 int sz = 0;
+     sz = 0;
+     while( fip.available() != 0  ){
+                  c = (char) fip.read();
+                  sz++;
+     }
+     
+
+     fip.close();
+     return sz;
+
+   }
+   byte embedChar(byte buffer[], char c) []{
+     int k;
+     int mask = 0x80;
+     byte buf[] = new byte[8];
+     byte data=(byte) c;
+
+  
+     for(k=0; k<8; k++){
+          
+               if( (data & mask) != 0)
+                    buf[k] = (byte)(buffer[k] | 1) ;
+               else
+                    buf[k] = (byte) (buffer[k] & 0xfe);
+          
+               mask = mask>>1;
+     }
+
+     return buf;
+
+   }
+
+   char extractChar(byte buffer[]){
+     int data=0;
+     int mask=1;
+     int k=0;
+     char c;
+
+     for(k=0; k<8; k++){
+          
+              data = data << 1;
+
+              if((buffer[k]& mask) != 0)
+                        data = data | 1;
+
+
+     }
+     c=(char) data;
+         return c;
+  }
+
+  //int hide(char *secretFileName, char *mediaFileName, char *destinationPath, int isFile){
+int hideInMEDIA (String secretFileName, String coverFileName) throws IOException {
+
+    FileInputStream secretFile = new FileInputStream(secretFileName);
+    FileInputStream mediaFile = new FileInputStream(coverFileName);
+    FileOutputStream outFile;
+
+    String outputFileName;
+    byte readBuffer[]= new byte[8];
+    byte writeBuffer[];
+    char c;
+    byte header[] = new byte[100] ;
+
+
+
+	
+	boolean tr = true;
+
+   
+   
+    outputFileName="steg";
+       outputFileName=outputFileName.concat(coverFileName.substring(coverFileName.indexOf(".")));
+
+ 
+      if(secretFile == null){
+             return 1;
+       }
+
+
+
+
+    if(mediaFile == null){
+              return 2;
+    }
+
+    outFile = new FileOutputStream(outputFileName);
+      // copy 44 byte header + 54 bytes of extension space
+    int offset = 0;
+    mediaFile.read(header,0,100);
+    offset = offset+100;
+    outFile.write(header);
+     getExtension(secretFileName);
+      size=getFileSize(secretFileName);
+
+    readSizeInChar();
+    
+    // embed verification
+    for(int i=0; i<5; i++){
+             mediaFile.read(readBuffer, 0,8);
+             offset += 8;
+             writeBuffer = embedChar(readBuffer, verification.charAt(i) );
+             outFile.write(writeBuffer);
+    }
+
+    // embed extension
+    for(int i=0; i<4; i++){
+             mediaFile.read(readBuffer, 0,8);
+             offset += 8;
+             writeBuffer = embedChar(readBuffer, ext[i] );
+             outFile.write(writeBuffer);
+
+    }
+
+    // embed size
+    for(int i=0; i<4; i++){
+             mediaFile.read(readBuffer,0,8);
+             offset += 8;
+             writeBuffer = embedChar(readBuffer, (char)sizeInChar[i] );
+             outFile.write(writeBuffer);
+    }
+
+    // embed secret file
+    for( int i=0; i<size; i++){
+              c = (char) secretFile.read();
+             mediaFile.read(readBuffer, 0,8);
+             offset += 8;
+             writeBuffer = embedChar(readBuffer, c );
+             outFile.write(writeBuffer);
+
+    }
+
+    // embed actual media data
+    while(mediaFile.available()!= 0){
+          mediaFile.read(readBuffer, 0,8);
+          offset += 8;
+          outFile.write(readBuffer);
+
+    }
+
+
+    // close opened files
+    secretFile.close();
+    mediaFile.close();
+    outFile.close();
+
+    return 4; // success
+}
+
+int unhideInMEDIA (String coverFileName)throws IOException {
+    FileInputStream mediaFile = new FileInputStream(coverFileName);
+    FileOutputStream outFile;
+
+    byte readBuffer[]= new byte[8];
+    char c;
+    int bytesRead=0;
+    int i,k;
+    int i1,i2,i3,i4;
+    int isFile = 0, hasExt = 0;
+    verify = new char[5];
+    ext = new char[4];
+    sizeInChar = new char[4];
+    String mediaFileName;
+	boolean tr = true;
+
+
+    // open stego file
+    // todo - error handling
+
+    if(mediaFile == null)
+    {
+    //   cout<<"Error:mediae file "<<mediaFile<<"not opened";
+       return 1;
+    }
+
+    // skip 100 bytes (header + extention space)
+    for(int j=1; j<=100; j++){
+     mediaFile.read();
+    }
+
+    // extract verification
+    for(i=0; i<5; i++){
+             mediaFile.read(readBuffer,0,8);
+             c = extractChar(readBuffer);
+             verify[i] = c;
+    }
+
+    if(verification.compareTo(verify.toString())== 0)
+                            return 0;
+
+    // extract extension
+    for(i=0; i<4; i++){
+             mediaFile.read(readBuffer,0,8);
+             c = extractChar(readBuffer);
+             ext[i] = c;
+            }
+
+    // parse extension
+
+	// check if file has extention or not
+	for(i=0; i<4; i++){
+	   if(ext[i]!='y'){
+		  hasExt = 1;	// hidden file has extention
+		  break;
+	  }
+	}
+
+
+	// extract size in BCD Representation
+	for(i=0; i<4; i++){
+             mediaFile.read(readBuffer,0,8);
+             sizeInChar[i] = extractChar(readBuffer);
+           }
+    // transform BCD to Decimal size
+    i1 = sizeInChar[0];
+    i2 = sizeInChar[1];
+    i3 = sizeInChar[2];
+    i4 = sizeInChar[3];
+
+    if(i1 >= 0xff00)
+                     i1 = i1& 0x000000ff;
+    if(i2 >= 0xff00)
+                     i2 = i2& 0x000000ff;
+    if(i3 >= 0xff00)
+                     i3 = i3& 0x000000ff;
+    if(i4 >= 0xff00)
+                     i4 = i4& 0x000000ff;
+
+    size = i1;
+    size = size << 8;
+    size = size | i2;
+    size = size << 8;
+    size = size | i3;
+    size = size << 8;
+    size = size | i4;
+
+   
+
+	//creating output filename
+
+	      String tempString="";
+		  if(hasExt == 0){			// hidden file has not extention
+			  stegoFile="hidden";
+			  i = stegoFile.length();
+          }
+   		  else{
+			stegoFile="hidden.";
+			i=stegoFile.length();
+			for(k=0; k < 4; i++,k++){
+				if(ext[k]==0)
+                           break;
+		        tempString=tempString.copyValueOf(ext,k,1);
+                       stegoFile=stegoFile.concat(tempString);
+        	}
+		  }
+		  outputFileName=stegoFile;
+          outFile = new  FileOutputStream(outputFileName);
+		  if(outFile == null){
+			  return 3;
+          }// report invalid destination
+
+
+
+	// extract secret data
+	for(i=0; i<size; i++){
+             mediaFile.read(readBuffer,0,8);
+             c = extractChar(readBuffer);
+             outFile.write((byte)c);
+
+    }
+
+    // close opened files
+    mediaFile.close();
+
+    outFile.close();
+    return 2; // success file
+
+
+
+}
+
+
+}
+
+
+
+
